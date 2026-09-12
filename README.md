@@ -106,11 +106,11 @@ All published ports bind to `127.0.0.1` in `compose.yaml`.
 
 This is a reference architecture for client review, not a claim about the client's current infrastructure. It assumes a private AWS-hosted reporting database, self-managed Vault in AWS, Microsoft Power BI Service, and no AWS Console access. The client must confirm its database engine, network boundaries, Vault operating model, Power BI licensing, identity standards, recovery objectives, and approved automation platform.
 
-<a href="docs/images/production-topology.svg?raw=true">
+<a href="https://raw.githubusercontent.com/pramalin/powerbi-vault-poc/main/docs/images/production-topology.svg">
   <img src="docs/images/production-topology.svg" alt="Proposed AWS, Vault, gateway and Power BI production topology" width="100%">
 </a>
 
-[**Open zoomable production-topology SVG**](docs/images/production-topology.svg?raw=true)
+[**Open zoomable production-topology SVG**](https://raw.githubusercontent.com/pramalin/powerbi-vault-poc/main/docs/images/production-topology.svg)
 
 ### Component placement and responsibility
 
@@ -142,11 +142,11 @@ Exact Microsoft endpoints and ports must be generated from the supported gateway
 
 ### Production credential-rotation sequence
 
-<a href="docs/images/credential-rotation.svg?raw=true">
+<a href="https://raw.githubusercontent.com/pramalin/powerbi-vault-poc/main/docs/images/credential-rotation.svg">
   <img src="docs/images/credential-rotation.svg" alt="Production Power BI gateway credential rotation sequence" width="100%">
 </a>
 
-[**Open zoomable credential-rotation SVG**](docs/images/credential-rotation.svg?raw=true)
+[**Open zoomable credential-rotation SVG**](https://raw.githubusercontent.com/pramalin/powerbi-vault-poc/main/docs/images/credential-rotation.svg)
 
 1. Vault rotates the password of the dedicated reporting account according to policy or an approved manual event.
 2. The synchronization workload authenticates to Vault using its machine identity and reads only the named static role.
