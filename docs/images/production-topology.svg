@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Proposed production topology for Power BI, HashiCorp Vault, and an AWS-hosted database</title>
+  <desc id="desc">Power BI developers publish to Microsoft Power BI Service. A two-node Windows EC2 gateway cluster connects outbound to Power BI and privately to the reporting database. A credential synchronization service reads a Vault-managed password and updates the Power BI gateway data source using the REST API.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#40566f"/></marker>
+    <style>
+      .title{font:700 30px Arial,sans-serif;fill:#172b3a}.heading{font:700 20px Arial,sans-serif;fill:#172b3a}.label{font:600 17px Arial,sans-serif;fill:#172b3a}.small{font:14px Arial,sans-serif;fill:#31475a}.zone{stroke-width:2;rx:18}.box{stroke-width:2;rx:12}.line{stroke:#40566f;stroke-width:3;fill:none;marker-end:url(#arrow)}.dash{stroke-dasharray:10 8}.note{font:italic 14px Arial,sans-serif;fill:#4c6070}
+    </style>
+  </defs>
+  <rect width="1600" height="1050" fill="#f7f9fb"/>
+  <text x="800" y="48" text-anchor="middle" class="title">Proposed production hosting topology</text>
+
+  <rect x="40" y="85" width="300" height="350" fill="#eef5ff" stroke="#4385d1" class="zone"/>
+  <text x="190" y="120" text-anchor="middle" class="heading">Client user environment</text>
+  <rect x="75" y="155" width="230" height="95" fill="#fff" stroke="#4385d1" class="box"/>
+  <text x="190" y="188" text-anchor="middle" class="label">Developer VDI</text>
+  <text x="190" y="216" text-anchor="middle" class="small">Power BI Desktop</text>
+  <text x="190" y="237" text-anchor="middle" class="small">PBIX authoring</text>
+  <rect x="75" y="300" width="230" height="95" fill="#fff" stroke="#4385d1" class="box"/>
+  <text x="190" y="333" text-anchor="middle" class="label">Report consumers</text>
+  <text x="190" y="361" text-anchor="middle" class="small">Browser / mobile</text>
+  <text x="190" y="382" text-anchor="middle" class="small">No database password</text>
+
+  <rect x="410" y="85" width="400" height="350" fill="#f3efff" stroke="#7157b7" class="zone"/>
+  <text x="610" y="120" text-anchor="middle" class="heading">Microsoft-hosted SaaS</text>
+  <rect x="455" y="155" width="310" height="110" fill="#fff" stroke="#7157b7" class="box"/>
+  <text x="610" y="188" text-anchor="middle" class="label">Power BI Service</text>
+  <text x="610" y="216" text-anchor="middle" class="small">Reports and semantic models</text>
+  <text x="610" y="240" text-anchor="middle" class="small">Import refresh / DirectQuery</text>
+  <rect x="455" y="305" width="310" height="90" fill="#fff" stroke="#7157b7" class="box"/>
+  <text x="610" y="338" text-anchor="middle" class="label">Microsoft Entra ID</text>
+  <text x="610" y="367" text-anchor="middle" class="small">Users + automation identity</text>
+
+  <rect x="870" y="85" width="690" height="900" fill="#fff7e8" stroke="#cf8428" class="zone"/>
+  <text x="1215" y="120" text-anchor="middle" class="heading">Client AWS account — private VPC</text>
+  <text x="1215" y="147" text-anchor="middle" class="note">Provisioned and operated through approved UI, IaC and scripts; AWS Console not required</text>
+
+  <rect x="910" y="180" width="610" height="225" fill="#edf7ed" stroke="#4e9258" class="zone"/>
+  <text x="1215" y="212" text-anchor="middle" class="heading">Private application subnets — two Availability Zones</text>
+  <rect x="945" y="245" width="245" height="115" fill="#fff" stroke="#4e9258" class="box"/>
+  <text x="1067" y="278" text-anchor="middle" class="label">Gateway node A</text>
+  <text x="1067" y="306" text-anchor="middle" class="small">Windows EC2 · AZ-a</text>
+  <text x="1067" y="330" text-anchor="middle" class="small">Standard Power BI gateway</text>
+  <rect x="1240" y="245" width="245" height="115" fill="#fff" stroke="#4e9258" class="box"/>
+  <text x="1362" y="278" text-anchor="middle" class="label">Gateway node B</text>
+  <text x="1362" y="306" text-anchor="middle" class="small">Windows EC2 · AZ-b</text>
+  <text x="1362" y="330" text-anchor="middle" class="small">Same gateway cluster</text>
+
+  <rect x="910" y="455" width="610" height="205" fill="#fceff6" stroke="#b14f85" class="zone"/>
+  <text x="1215" y="487" text-anchor="middle" class="heading">Private security subnets</text>
+  <rect x="945" y="520" width="330" height="105" fill="#fff" stroke="#b14f85" class="box"/>
+  <text x="1110" y="553" text-anchor="middle" class="label">HashiCorp Vault cluster</text>
+  <text x="1110" y="581" text-anchor="middle" class="small">3+ nodes · Integrated Storage</text>
+  <text x="1110" y="605" text-anchor="middle" class="small">TLS · audit · database secrets engine</text>
+  <rect x="1310" y="520" width="175" height="105" fill="#fff" stroke="#b14f85" class="box"/>
+  <text x="1397" y="553" text-anchor="middle" class="label">AWS KMS</text>
+  <text x="1397" y="581" text-anchor="middle" class="small">Vault auto-unseal</text>
+  <text x="1397" y="605" text-anchor="middle" class="small">IAM controlled</text>
+
+  <rect x="910" y="710" width="610" height="225" fill="#eef5ff" stroke="#4385d1" class="zone"/>
+  <text x="1215" y="742" text-anchor="middle" class="heading">Private data and automation subnets</text>
+  <rect x="945" y="775" width="260" height="115" fill="#fff" stroke="#4385d1" class="box"/>
+  <text x="1075" y="808" text-anchor="middle" class="label">Credential sync job</text>
+  <text x="1075" y="836" text-anchor="middle" class="small">Approved scheduler / host</text>
+  <text x="1075" y="860" text-anchor="middle" class="small">AWS role → Vault policy</text>
+  <rect x="1250" y="775" width="235" height="115" fill="#fff" stroke="#4385d1" class="box"/>
+  <text x="1367" y="808" text-anchor="middle" class="label">Reporting database</text>
+  <text x="1367" y="836" text-anchor="middle" class="small">RDS / approved DB</text>
+  <text x="1367" y="860" text-anchor="middle" class="small">Read-only Power BI user</text>
+
+  <path d="M305 202 H455" class="line"/><text x="380" y="190" text-anchor="middle" class="small">Publish PBIX</text>
+  <path d="M455 350 H340" class="line"/><text x="395" y="338" text-anchor="middle" class="small">Sign-in</text>
+  <path d="M340 347 H455" class="line"/>
+  <path d="M305 347 H455" class="line"/><text x="380" y="390" text-anchor="middle" class="small">View reports</text>
+  <path d="M765 210 C850 210 850 275 945 275" class="line"/><text x="853" y="195" text-anchor="middle" class="small">Outbound gateway channel</text>
+  <path d="M765 230 C850 230 850 330 1240 330" class="line"/>
+  <path d="M1067 360 C1067 675 1320 675 1367 775" class="line"/><text x="1200" y="687" text-anchor="middle" class="small">Private DB queries</text>
+  <path d="M1362 360 C1362 560 1380 650 1380 775" class="line"/>
+  <path d="M1275 575 H1310" class="line"/><text x="1292" y="558" text-anchor="middle" class="small">Unseal</text>
+  <path d="M1205 832 C1240 832 1260 820 1250 820" class="line"/>
+  <path d="M1075 775 C1075 710 1110 690 1110 625" class="line"/><text x="1000" y="690" class="small">Read current secret</text>
+  <path d="M945 810 C790 780 795 440 610 395" class="line dash"/><text x="790" y="680" text-anchor="middle" class="small">Entra token</text>
+  <path d="M945 855 C760 850 760 300 610 265" class="line dash"/><text x="790" y="825" text-anchor="middle" class="small">Encrypt + update gateway credential via API</text>
+
+  <text x="70" y="1015" class="small">Solid lines: report/data paths · Dashed lines: identity/control paths · No inbound Internet port is opened to gateway nodes</text>
+</svg>
+
