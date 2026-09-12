@@ -1,0 +1,5 @@
+.env
+*.pbix
+.idea/
+.vscode/
+

@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: reporting
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run ./scripts/setup.sh first}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reporting"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  vault:
+    image: hashicorp/vault:1.20
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:?Run ./scripts/setup.sh first}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
+    command: server -dev
+    ports:
+      - "127.0.0.1:8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  toolbox:
+    build: ./toolbox
+    profiles: ["tools"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:?Run ./scripts/setup.sh first}
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run ./scripts/setup.sh first}
+    volumes:
+      - ./scripts/container:/work:ro
+      - gateway-credentials:/run/powerbi-creds
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+
+  gateway-simulator:
+    build: ./gateway-simulator
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: reporting
+      PGUSER: powerbi_reader
+      CREDENTIAL_FILE: /run/powerbi-creds/credential.json
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - gateway-credentials:/run/powerbi-creds:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  gateway-credentials:
