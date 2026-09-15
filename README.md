@@ -27,7 +27,9 @@ The production diagrams later in this document are SVG files. Use the **Open zoo
 
 Run all shell commands from a WSL terminal.
 
-## Start the POC
+## Setup options
+
+### Automated setup
 
 ```bash
 chmod +x scripts/*.sh scripts/container/*.sh
@@ -41,6 +43,20 @@ Verify the simulated report:
 ```bash
 curl http://localhost:8080/report
 ```
+
+### Vault UI-guided setup
+
+The automated setup is the quickest repeatable way to run the POC. To learn
+where the database connection and static reporting role appear in HashiCorp
+Vault's web interface, follow the
+[Vault UI walkthrough](docs/vault-ui-walkthrough.md).
+
+The walkthrough records the fields actually observed in Vault Community
+Edition, the API-assisted fallback for fields the UI does not expose, the
+complete credential-rotation result, and the recommended production boundary
+between PostgreSQL administration, Vault, and the Power BI reporting account.
+
+Both setup paths produce the same local POC behavior.
 
 ## Demonstrate rotation
 
@@ -245,3 +261,4 @@ This POC intentionally uses Vault development mode. A production design must add
 - Separate development, test, and production identities and Vault paths
 
 See [SECURITY.md](SECURITY.md) before presenting or extending the project.
+
