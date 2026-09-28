@@ -4,6 +4,8 @@ This local proof of concept demonstrates how HashiCorp Vault can manage and rota
 
 A synchronization job reads the rotated credential from Vault, encrypts it with the gateway's public key, and updates the gateway data source through the Power BI REST API — the same mechanism proposed for production. It needs a Microsoft Entra (work or school) tenant with Power BI, but no AWS console or client VDI.
 
+**Results and findings:** [docs/poc-findings.md](docs/poc-findings.md) summarises what was proved, what got in the way, and the production recommendations, in plain language.
+
 An offline [gateway simulator](#offline-simulator) is kept for demonstrations where no Power BI tenant is available.
 
 ## What this proves
