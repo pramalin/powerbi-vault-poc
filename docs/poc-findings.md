@@ -27,6 +27,14 @@ Five parts take part. Only one of them, the **sync job**, is new; the rest alrea
 
 The sync job then asks the gateway to test the connection, so a failure is caught immediately instead of at the next report refresh.
 
+Vault manages the reporting account as a *static role*: it knows the account, changes its password every day, and never shows the password on screen.
+
+![Vault UI showing the powerbi-reader static role, rotation period 1 day, password hidden](images/vault-static-role.png)
+
+The gateway runs as a Windows service on the laptop and stays connected to Power BI.
+
+![On-premises data gateway status page: online and ready to be used](images/gateway-online.png)
+
 ## What we proved today
 
 One command, `./scripts/demo-rotation.sh`, ran the whole cycle against the real gateway and passed every step.
@@ -40,6 +48,31 @@ One command, `./scripts/demo-rotation.sh`, ran the whole cycle against the real 
 | 5 | Gateway tested again; the report refreshed | OK, refresh completed |
 
 Step 3 matters as much as step 5. It shows that changing the password really does cut off an old copy, so the sync job is doing real work rather than passing a password that never changed.
+
+Output of the run on 27 September 2026 (Docker progress lines removed):
+
+```text
+1. Gateway connection with the synchronized credential (expect OK)
+Gateway connection test: OK
+Refresh requested; waiting for completion...
+Refresh completed.
+2. Rotate the database password in Vault
+Vault rotated the database password.
+Closed 2 existing powerbi_reader session(s).
+3. Gateway still holds the old password (expect FAILED)
+Gateway connection test: FAILED (HTTP 400) DM_GWPipeline_Gateway_MashupDataAccessError
+4. Encrypt the new Vault credential for the gateway and update the data source
+Gateway data source updated from Vault (Vault rotation time: 2026-09-28T01:37:10.103642814Z).
+5. Gateway connection again (expect OK)
+Gateway connection test: OK
+Refresh requested; waiting for completion...
+Refresh completed.
+Rotation demonstration against the real gateway completed successfully.
+```
+
+Power BI confirms it independently: the report and its data show a refresh at 9:37:26 PM, 16 seconds after Vault rotated the password at 9:37:10 PM New York time (01:37:10 UTC).
+
+![Power BI workspace showing sales-by-region report and semantic model refreshed at 9:37:26 PM](images/powerbi-refreshed.png)
 
 At no point was the password typed, displayed, stored in a file, or sent to Power BI in readable form. The only manual password entry was the very first setup of the gateway connection.
 
