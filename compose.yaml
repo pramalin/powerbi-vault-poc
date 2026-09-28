@@ -4,11 +4,18 @@ services:
     environment:
       POSTGRES_DB: reporting
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run ./scripts/setup.sh first}
+    # TLS is required by the Power BI gateway's encrypted connection.
+    # ./scripts/create-postgres-cert.sh creates the certificate.
+    command: ["sh", "-c", "cp /tls/server.crt /tls/server.key /var/lib/postgresql/ && chown postgres /var/lib/postgresql/server.crt /var/lib/postgresql/server.key && chmod 600 /var/lib/postgresql/server.key && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/var/lib/postgresql/server.key"]
     ports:
-      - "127.0.0.1:5432:5432"
+      # Default suits Windows 11 mirrored networking or Docker Desktop.
+      # Windows 10 + Docker Engine in WSL: set POSTGRES_PUBLISH=0.0.0.0:15432
+      # in .env and run scripts/windows/gateway-network.ps1 (see README).
+      - "${POSTGRES_PUBLISH:-127.0.0.1:5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/tls:/tls:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d reporting"]
       interval: 3s
@@ -39,17 +46,31 @@ services:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:?Run ./scripts/setup.sh first}
       POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run ./scripts/setup.sh first}
+      POWERBI_AUTH_MODE: ${POWERBI_AUTH_MODE:-device}
+      POWERBI_TENANT_ID: ${POWERBI_TENANT_ID:-}
+      POWERBI_CLIENT_ID: ${POWERBI_CLIENT_ID:-}
+      POWERBI_CLIENT_SECRET: ${POWERBI_CLIENT_SECRET:-}
+      POWERBI_GATEWAY_ID: ${POWERBI_GATEWAY_ID:-}
+      POWERBI_DATASOURCE_ID: ${POWERBI_DATASOURCE_ID:-}
+      POWERBI_WORKSPACE_ID: ${POWERBI_WORKSPACE_ID:-}
+      POWERBI_DATASET_ID: ${POWERBI_DATASET_ID:-}
+      POWERBI_ENCRYPTED_CONNECTION: ${POWERBI_ENCRYPTED_CONNECTION:-Encrypted}
+      POWERBI_PRIVACY_LEVEL: ${POWERBI_PRIVACY_LEVEL:-Organizational}
     volumes:
       - ./scripts/container:/work:ro
       - gateway-credentials:/run/powerbi-creds
+      - powerbi-auth:/run/powerbi-auth
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
 
+  # Optional offline stand-in for the real gateway. Start with:
+  #   ./scripts/simulator/demo-rotation.sh
   gateway-simulator:
     build: ./gateway-simulator
+    profiles: ["simulator"]
     environment:
       PGHOST: postgres
       PGPORT: 5432
@@ -68,3 +89,4 @@ services:
 volumes:
   postgres-data:
   gateway-credentials:
+  powerbi-auth:

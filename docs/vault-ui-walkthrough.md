@@ -4,7 +4,7 @@ This optional workflow uses Vault's web UI for the parts exposed by Vault
 Community Edition 1.20. The UI form does not expose every database connection
 property, so the existing bootstrap script remains the reliable fallback.
 
-Vault's UI is an administration interface. The gateway simulator still reads
+Vault's UI is an administration interface. The credential-sync job still reads
 credentials through Vault's API, as a production workload would.
 
 ## Understand the two different rotations
@@ -98,11 +98,10 @@ its default password-rotation statement. This changes only the read-only
 
 ```bash
 ./scripts/finish-ui-setup.sh
-curl http://localhost:8080/report
 ```
 
-The finish script verifies the engine, connection, static role, and credential
-before starting the gateway simulator.
+The finish script verifies the engine, connection, static role, and credential.
+Continue with [Use the real Power BI gateway](../README.md#use-the-real-power-bi-gateway).
 
 ## If the UI rejects the role
 
@@ -131,13 +130,16 @@ while the script supplies fields the UI does not expose.
 
 ## Demonstrate credential rotation
 
+With the real gateway configured, run `./scripts/demo-rotation.sh` (see the
+README). Without a Power BI tenant, run the offline simulator:
+
 ```bash
-./scripts/demo-rotation.sh
+./scripts/simulator/demo-rotation.sh
 ```
 
-### Observed result
+### Observed result (offline simulator)
 
-The following result was captured from the completed local POC. Transient
+The following result was captured from the simulator version of the POC. Transient
 Docker progress lines and the second copy of the unchanged six-row result are
 condensed because container names differ between runs.
 
