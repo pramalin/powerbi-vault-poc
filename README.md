@@ -1,18 +1,18 @@
 # Power BI and HashiCorp Vault credential-rotation POC
 
-This local proof of concept demonstrates how HashiCorp Vault can manage and rotate a read-only database credential used by a Power BI-like gateway. PostgreSQL, Vault, and the gateway simulator run in Docker Compose under WSL. Power BI Desktop runs natively on Windows and connects to PostgreSQL through `localhost`.
+This local proof of concept demonstrates how HashiCorp Vault can manage and rotate a read-only database credential used by the Microsoft on-premises data gateway. PostgreSQL and Vault run in Docker Compose under WSL. Power BI Desktop and the real on-premises data gateway run natively on Windows and reach PostgreSQL through `127.0.0.1:5432` over TLS.
 
-It is deliberately independent of an AWS console, client VDI, and Power BI tenant so the core security behavior can be demonstrated from a personal laptop.
+A synchronization job reads the rotated credential from Vault, encrypts it with the gateway's public key, and updates the gateway data source through the Power BI REST API — the same mechanism proposed for production. It needs a Microsoft Entra (work or school) tenant with Power BI, but no AWS console or client VDI.
+
+An offline [gateway simulator](#offline-simulator) is kept for demonstrations where no Power BI tenant is available.
 
 ## What this proves
 
 1. A dedicated `powerbi_reader` account can query only reporting data.
 2. Vault manages that account as a static database role.
-3. After Vault rotates the password, a consumer holding the old password fails.
-4. A synchronization job retrieves the current credential from Vault.
-5. The consumer succeeds again without placing the password in source control.
-
-The gateway simulator represents the credential cache in the real Microsoft on-premises data gateway. It is not Microsoft gateway software.
+3. After Vault rotates the password, the real gateway's stored credential fails its connection test.
+4. A synchronization job retrieves the current credential from Vault, encrypts it for the gateway, and updates the gateway data source through the Power BI REST API.
+5. The gateway connects (and, optionally, the semantic model refreshes) again without the password appearing in source control, command lines, logs, or the Power BI UI.
 
 ## Architecture diagrams
 
@@ -22,7 +22,9 @@ The production diagrams later in this document are SVG files. Use the **Open zoo
 
 - Windows 10 or 11 with WSL 2
 - Docker Desktop with WSL integration, or Docker Engine inside WSL
-- Power BI Desktop (optional for the Compose-only test)
+- Power BI Desktop
+- [On-premises data gateway (standard mode)](https://learn.microsoft.com/data-integration/gateway/service-gateway-install) installed on the same Windows machine
+- A Microsoft Entra work or school account with Power BI, in a tenant where you can register an app (see [Power BI tenant for testing](#power-bi-tenant-for-testing))
 - `bash`, `openssl`, and `curl` in WSL
 
 Run all shell commands from a WSL terminal.
@@ -36,13 +38,7 @@ chmod +x scripts/*.sh scripts/container/*.sh
 ./scripts/setup.sh
 ```
 
-The first run downloads and builds the container images, starts PostgreSQL and Vault, configures Vault's PostgreSQL secrets engine, synchronizes the credential, and starts the gateway simulator.
-
-Verify the simulated report:
-
-```bash
-curl http://localhost:8080/report
-```
+The first run downloads and builds the container images, starts PostgreSQL and Vault, and configures Vault's PostgreSQL secrets engine. Continue with [Use the real Power BI gateway](#use-the-real-power-bi-gateway).
 
 ### Vault UI-guided setup
 
@@ -58,21 +54,6 @@ between PostgreSQL administration, Vault, and the Power BI reporting account.
 
 Both setup paths produce the same local POC behavior.
 
-## Demonstrate rotation
-
-```bash
-./scripts/demo-rotation.sh
-```
-
-The demonstration performs a successful query, rotates the password, proves the cached credential fails, synchronizes the replacement credential, and proves queries work again.
-
-Individual operations are also available:
-
-```bash
-./scripts/rotate-credential.sh
-./scripts/sync-credential.sh
-```
-
 ## Connect Power BI Desktop
 
 Display the current local reporting credential:
@@ -86,7 +67,7 @@ This command intentionally reveals the password and is for the isolated local PO
 In Power BI Desktop on Windows:
 
 1. Select **Get data > PostgreSQL database**.
-2. Set **Server** to `localhost:5432`.
+2. Set **Server** to `127.0.0.1:5432`. Use the IP address, not `localhost`: Windows may resolve `localhost` to IPv6 `::1`, where nothing listens.
 3. Set **Database** to `reporting`.
 4. Select **Import** mode.
 5. Choose database authentication and enter `powerbi_reader` plus the displayed password.
@@ -94,7 +75,7 @@ In Power BI Desktop on Windows:
 7. Create a visual using `month`, `region`, and `revenue`.
 8. Save the PBIX outside this repository, or keep it ignored by Git.
 
-If `localhost` does not reach WSL, run `hostname -I` in WSL and use its first IP address as the server. Windows firewall policy may also affect connectivity.
+If Desktop shows **Encryption Support** ("unable to connect using an encrypted connection"), the certificate is not yet trusted on Windows; run `scripts/windows/gateway-network.ps1` (see [Windows networking and TLS](#1-windows-networking-and-tls)) rather than accepting an unencrypted connection, because the gateway will not offer that fallback.
 
 ### Observe Power BI behavior
 
@@ -105,16 +86,184 @@ If `localhost` does not reach WSL, run `hostname -I` in WSL and use its first IP
 5. In Power BI Desktop, open **File > Options and settings > Data source settings**, edit permissions for the PostgreSQL source, and enter the new password.
 6. Refresh again successfully.
 
-This demonstrates that putting a credential in Vault is not enough. Every credential consumer must receive the rotated value.
+This demonstrates that putting a credential in Vault is not enough. Every credential consumer must receive the rotated value. Desktop is a developer tool and stays manual; the gateway, which serves published reports, is automated next.
+
+## Power BI tenant for testing
+
+The gateway installer's sign-in is a Microsoft Entra sign-in, not a newsletter registration. The gateway registers itself with a Power BI tenant and cannot run without one, and personal addresses (Gmail, Outlook.com) are not accepted. Use a separate, disposable test tenant rather than a personal or client production account:
+
+| Option | Notes |
+|---|---|
+| Client-provided test account | Preferred. A test user and workspace in the client's development tenant; the client's admin performs the app registration and tenant settings below. |
+| Microsoft 365 Developer Program E5 sandbox | Includes Power BI Pro. Eligibility is limited to Visual Studio Professional/Enterprise subscribers, certain Microsoft partner tiers, and Premier/Unified Support customers. |
+| Microsoft 365 business trial tenant | Creates `you@<name>.onmicrosoft.com`. Signup asks for a contact email and phone (and may ask for a payment method); an alias address is sufficient. Start a Power BI/Fabric trial as that user. |
+
+Whichever you choose, sign in to the gateway, Power BI Service, and this POC with the `@<tenant>.onmicrosoft.com` (or client) account. Delete the trial tenant when the POC is finished.
+
+## Use the real Power BI gateway
+
+```mermaid
+sequenceDiagram
+    participant V as Vault (WSL)
+    participant S as powerbi.sh sync (toolbox)
+    participant P as Power BI REST API
+    participant G as On-premises gateway (Windows)
+    participant D as PostgreSQL (WSL)
+    V->>D: rotate powerbi_reader password
+    S->>V: read database/static-creds/powerbi-reader
+    S->>P: GET gateway public key
+    S->>S: encrypt credential (RSA-OAEP + AES-256/HMAC)
+    S->>P: PATCH gateway data source
+    P->>G: encrypted credential via Azure Relay
+    S->>P: GET data source status
+    G->>D: test connection with new password
+```
+
+### 1. Windows networking and TLS
+
+The gateway runs as a Windows service, not as your user, which matters in two ways:
+
+- **TLS.** The gateway's PostgreSQL connection is encrypted by default and does not fall back to plain text the way Desktop does. `setup.sh` therefore starts PostgreSQL with a self-signed certificate for `127.0.0.1` (`postgres/tls/`, ignored by Git), and Windows must trust it.
+- **Reaching WSL.** With Windows 11 mirrored networking (`networkingMode=mirrored` in `%UserProfile%\.wslconfig`) or Docker Desktop, the service reaches `127.0.0.1:5432` directly. With **Windows 10 and Docker Engine inside WSL**, WSL's `localhost` forwarding is visible to your user only; the gateway gets *"No connection could be made because the target machine actively refused it"*. A Windows port proxy fixes this.
+
+| Setup | `.env` | Administrator PowerShell |
+|---|---|---|
+| Windows 11 mirrored networking, or Docker Desktop | (nothing) | `.\scripts\windows\gateway-network.ps1 -RepoPath <WSL repo path>` |
+| Windows 10, Docker Engine in WSL | `POSTGRES_PUBLISH=0.0.0.0:15432`, then `docker compose up -d postgres` | `.\scripts\windows\gateway-network.ps1 -RepoPath <WSL repo path> -PortProxy` |
+
+Run the PowerShell script from a Windows copy of the repository or through `\\wsl$\<distro>\<repo path>\scripts\windows\`; `-RepoPath` is the path inside WSL, for example `~/sources/powerbi-vault-poc`. With `-PortProxy`, re-run it after every reboot or `wsl --shutdown`, because WSL receives a new IP address. The script trusts the certificate, forwards `127.0.0.1:5432` to the WSL address (detected from `eth0`), and restarts the gateway service. If PowerShell refuses to run scripts, start it with `powershell -ExecutionPolicy Bypass -File ...`.
+
+### 2. Register the gateway
+
+1. Run the on-premises data gateway installer in **standard mode** on Windows.
+2. Sign in with the test tenant account and choose **Register a new gateway**.
+3. Name it (for example `vault-poc-gateway`) and store the recovery key in your password manager.
+
+### 3. Publish the report and create the gateway connection
+
+A Power BI Pro license (or the 60-day Power BI trial started from your profile picture in Power BI Service) is needed to create a workspace and map gateway connections. A Fabric trial is not required.
+
+1. Build the report in Desktop as described above, using server `127.0.0.1:5432` and database `reporting`, then **Publish** to a workspace.
+2. In Power BI Service open **Settings > Manage connections and gateways > Connections > + New** and choose **On-premises** at the top of the panel. A form without a **Gateway cluster name** field creates a *cloud* connection, which Microsoft's servers test from the internet and which fails with *"actively refused"*.
+3. Select the gateway cluster, set **Connection type** to PostgreSQL, **Server** to `127.0.0.1:5432`, and **Database** to `reporting`. These must match the PBIX exactly or the semantic model cannot bind to the connection.
+4. Choose **Basic** authentication and enter `powerbi_reader` plus the password from `./scripts/show-powerbi-credentials.sh`. Keep **Encrypted connection** set to **Encrypted**. This is the only manual password entry; later rotations are automated.
+5. Open the semantic model's **Settings > Gateway and cloud connections**, switch on **Use an On-premises or VNet data gateway**, map the PostgreSQL source to the new connection, and **Apply**. **Refresh now** should succeed.
+
+### 4. Register an Entra application for the sync job
+
+In the Entra admin center, open **App registrations > New registration** (single tenant) and copy the **Directory (tenant) ID** and **Application (client) ID** into `.env`. Then choose one mode:
+
+**Delegated user (`POWERBI_AUTH_MODE=device`, simplest for the POC)**
+
+1. **Authentication > Settings > Allow public client flows: Enabled** (or set `"isFallbackPublicClient": true` in **Manifest**). No redirect URI is needed.
+2. **API permissions > Add a permission > Power BI Service > Delegated > `Dataset.ReadWrite.All`**, then **Grant admin consent** (or accept the consent prompt at first sign-in).
+3. The signed-in user must be an admin/owner of the gateway connection (the user who created it is).
+
+**Service principal (`POWERBI_AUTH_MODE=service_principal`, closer to production)**
+
+1. Create a client secret and put it in `POWERBI_CLIENT_SECRET` (local POC only; production uses workload identity or a certificate from an approved store).
+2. In the Fabric/Power BI admin portal, enable **Service principals can call Fabric public APIs** for a security group that contains the app.
+3. In **Manage connections and gateways**, add the service principal to the connection with the **Owner** role, and to the workspace as **Contributor** if it should trigger refreshes.
+
+### 5. Discover IDs and synchronize
+
+```bash
+./scripts/powerbi.sh login        # device mode only: prints a code for https://microsoft.com/devicelogin
+./scripts/powerbi.sh discover     # lists gateway and data-source IDs
+# add POWERBI_GATEWAY_ID and POWERBI_DATASOURCE_ID to .env
+# optional: POWERBI_DATASET_ID (and POWERBI_WORKSPACE_ID unless using My workspace) from the semantic model URL, to refresh
+./scripts/sync-credential.sh      # Vault -> encrypt -> PATCH gateway data source -> connection test
+```
+
+`.env` then contains, for example:
+
+```
+POWERBI_AUTH_MODE=device
+POWERBI_TENANT_ID=<directory (tenant) ID>
+POWERBI_CLIENT_ID=<application (client) ID>
+POWERBI_WORKSPACE_ID=<workspace ID from the semantic model URL>
+POWERBI_DATASET_ID=<dataset ID from the semantic model URL>
+POWERBI_GATEWAY_ID=<from discover>
+POWERBI_DATASOURCE_ID=<from discover>
+POWERBI_ENCRYPTED_CONNECTION=Encrypted
+```
+
+The device-code sign-in is cached in the `powerbi-auth` Docker volume, so later runs are non-interactive until the refresh token expires.
+
+### 6. Demonstrate rotation
+
+```bash
+./scripts/demo-rotation.sh
+```
+
+The demonstration:
+
+1. Tests the gateway connection (and refreshes the semantic model if configured).
+2. Rotates the password in Vault and closes existing `powerbi_reader` sessions, because PostgreSQL keeps authenticated sessions alive and the gateway pools connections.
+3. Proves the gateway's stored credential now fails its connection test.
+4. Reads the new credential from Vault, encrypts it with the gateway's public key, and updates the data source.
+5. Proves the gateway connects (and the refresh succeeds) again.
+
+Observed result (Docker progress lines removed):
+
+```text
+1. Gateway connection with the synchronized credential (expect OK)
+Gateway connection test: OK
+Refresh requested; waiting for completion...
+Refresh completed.
+2. Rotate the database password in Vault
+Vault rotated the database password.
+Closed 2 existing powerbi_reader session(s).
+3. Gateway still holds the old password (expect FAILED)
+Gateway connection test: FAILED (HTTP 400) DM_GWPipeline_Gateway_MashupDataAccessError
+4. Encrypt the new Vault credential for the gateway and update the data source
+Gateway data source updated from Vault (Vault rotation time: 2026-09-28T01:04:35.805476134Z).
+5. Gateway connection again (expect OK)
+Gateway connection test: OK
+Refresh requested; waiting for completion...
+Refresh completed.
+Rotation demonstration against the real gateway completed successfully.
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Gateway installer asks for an email | It is a Microsoft Entra sign-in; personal addresses are rejected | Use a test-tenant account ([Power BI tenant for testing](#power-bi-tenant-for-testing)) |
+| Creating a workspace asks for a purchase | Account has only the free Power BI license | Start the Power BI trial from your profile picture |
+| *"actively refused"* when creating the connection, and the form has no gateway field | A cloud connection was being created | Create it from **Connections > + New > On-premises** |
+| *"actively refused"* on an on-premises connection | Gateway service cannot reach WSL (Windows 10 NAT) | `POSTGRES_PUBLISH=0.0.0.0:15432` and `gateway-network.ps1 -PortProxy` |
+| *"Unable to connect ... encrypted connection"* / Desktop **Encryption Support** prompt | Certificate not trusted, or PostgreSQL without TLS | Run `gateway-network.ps1`; check `docker compose exec postgres psql -U postgres -tAc "show ssl"` returns `on` |
+| Everything broke after a reboot (Windows 10) | WSL IP address changed | Re-run `gateway-network.ps1 -PortProxy` |
+| `Missing POWERBI_...` from `powerbi.sh` | Value absent from `.env` | Add it; `grep POWERBI_ .env` to check |
+
+Individual operations:
+
+```bash
+./scripts/rotate-credential.sh
+./scripts/sync-credential.sh
+./scripts/powerbi.sh status
+./scripts/powerbi.sh refresh
+```
+
+The credential is encrypted inside the toolbox container before it leaves your machine; Power BI Service stores only the encrypted value, which only the gateway can decrypt. The encryption code in `scripts/container/powerbi_gateway.py` is a port of [Microsoft's Python credential-encryption sample](https://github.com/microsoft/PowerBI-Developer-Samples/tree/master/Python/Encrypt%20credentials).
+
+## Offline simulator
+
+When no Power BI tenant is available, the original simulator demonstrates the same rotation behavior with a stand-in for the gateway's credential cache. It is not Microsoft gateway software.
+
+```bash
+./scripts/simulator/demo-rotation.sh
+curl http://localhost:8080/report
+```
 
 ## Local endpoints
 
 | Endpoint | Purpose |
 |---|---|
-| `http://localhost:8080/report` | Execute a reporting query through the simulator |
-| `http://localhost:8080/health` | Simulator health check |
 | `http://localhost:8200` | Local Vault development API/UI |
-| `localhost:5432` | PostgreSQL for Power BI Desktop |
+| `127.0.0.1:5432` | PostgreSQL (TLS) for Power BI Desktop and the on-premises data gateway |
+| `http://localhost:8080/report` | Offline simulator only |
 
 All published ports bind to `127.0.0.1` in `compose.yaml`.
 
@@ -203,10 +352,9 @@ The scripts should be idempotent, environment-parameterized and reviewed through
 | PostgreSQL container | Client reporting database in a private AWS data subnet |
 | Vault development container | Highly available client Vault deployment with TLS, durable storage and audit |
 | `powerbi_reader` | Dedicated least-privilege production reporting identity |
-| Gateway simulator | Standard Power BI gateway cluster on managed Windows EC2 |
-| Credential JSON volume | Power BI's encrypted gateway credential store; no shared JSON file in production |
-| Credential-sync shell script | Approved workload-identity-based automation using Vault and Power BI APIs |
-| `/report` query | Semantic-model Import refresh or DirectQuery operation |
+| Single gateway on the developer's Windows machine | Standard Power BI gateway cluster on managed Windows EC2 |
+| `powerbi_gateway.py sync` with a Vault root token and device-code or client-secret sign-in | Approved automation using workload identity for Vault and a certificate/managed identity for Entra |
+| `powerbi.sh status` / `refresh` | Post-rotation validation and monitored semantic-model refresh |
 | Manual rotation demo | Scheduled, monitored and recoverable production rotation workflow |
 
 ### Authoritative implementation references
@@ -257,6 +405,7 @@ This POC intentionally uses Vault development mode. A production design must add
 - Auditing and monitoring without secret values in logs
 - Rotation retry, rollback, and outage handling
 - A Windows gateway cluster rather than a single unmanaged host
+- No client secret or Vault root token in `.env`; use workload identity and certificates
 - Power BI API permissions approved by the tenant administrator
 - Separate development, test, and production identities and Vault paths
 

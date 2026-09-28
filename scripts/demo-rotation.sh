@@ -1,23 +1,32 @@
 #!/usr/bin/env bash
+# Rotation demo against the real Power BI on-premises data gateway.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+set -a; source .env; set +a
 
-echo "1. Query with synchronized credential (expect HTTP 200)"
-curl -fsS http://localhost:8080/report | jq .
+refresh() {
+  if [[ -n "${POWERBI_DATASET_ID:-}" ]]; then
+    ./scripts/powerbi.sh refresh
+  else
+    echo "(POWERBI_DATASET_ID not set; skipping semantic-model refresh)"
+  fi
+}
 
-echo "2. Rotate database password in Vault"
+echo "1. Gateway connection with the synchronized credential (expect OK)"
+./scripts/powerbi.sh status
+refresh
+
+echo "2. Rotate the database password in Vault"
 ./scripts/rotate-credential.sh
 
-echo "3. Query with stale simulated-gateway credential (expect HTTP 503)"
-status="$(curl -sS -o /tmp/powerbi-vault-response.json -w '%{http_code}' http://localhost:8080/report)"
-jq . /tmp/powerbi-vault-response.json
-[[ "$status" == "503" ]] || { echo "Expected 503, received $status" >&2; exit 1; }
+echo "3. Gateway still holds the old password (expect FAILED)"
+./scripts/powerbi.sh status --expect-failure
 
-echo "4. Synchronize the new credential from Vault"
-./scripts/sync-credential.sh
+echo "4. Encrypt the new Vault credential for the gateway and update the data source"
+./scripts/powerbi.sh sync
 
-echo "5. Query again (expect HTTP 200)"
-curl -fsS http://localhost:8080/report | jq .
+echo "5. Gateway connection again (expect OK)"
+./scripts/powerbi.sh status
+refresh
 
-echo "Rotation demonstration completed successfully."
-
+echo "Rotation demonstration against the real gateway completed successfully."

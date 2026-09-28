@@ -14,6 +14,7 @@ else
   echo ".env already exists; leaving it unchanged."
 fi
 
+./scripts/create-postgres-cert.sh
 docker compose up -d --build postgres vault
 
 echo

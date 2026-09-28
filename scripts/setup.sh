@@ -14,11 +14,12 @@ else
   echo ".env already exists; leaving it unchanged."
 fi
 
+./scripts/create-postgres-cert.sh
 docker compose up -d --build postgres vault
 docker compose --profile tools run --rm toolbox /work/bootstrap-vault.sh
-docker compose --profile tools run --rm toolbox /work/sync-credential.sh
-docker compose up -d --build gateway-simulator
+docker compose --profile tools build toolbox
 
 echo
-echo "POC is ready. Run: ./scripts/demo-rotation.sh"
-echo "Gateway simulator: http://localhost:8080/report"
+echo "PostgreSQL and Vault are ready."
+echo "Next: connect the Power BI gateway (README: 'Use the real Power BI gateway'),"
+echo "or run the offline simulator demo: ./scripts/simulator/demo-rotation.sh"
