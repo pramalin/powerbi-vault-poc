@@ -6,3 +6,4 @@
 __pycache__/
 postgres/tls/
 compose.override.yaml
+powerbi-vault-poc.html
